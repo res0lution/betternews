@@ -1,9 +1,68 @@
-import { Hono } from 'hono'
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 
-const app = new Hono()
+import { type ErrorResponse } from "@/shared/types";
 
-app.get('/', (c) => {
-  return c.text('Hello Hono!')
-})
+import { lucia } from "./lucia";
 
-export default app
+const app = new Hono();
+
+app.get("/", (c) => {
+  return c.text("Hello Hono!");
+});
+
+app.use("*", cors(), async (c, next) => {
+  const sessionId = lucia.readSessionCookie(c.req.header("Cookie") ?? "");
+  if (!sessionId) {
+    c.set("user", null);
+    c.set("session", null);
+    return next();
+  }
+
+  const { session, user } = await lucia.validateSession(sessionId);
+  if (session && session.fresh) {
+    c.header("Set-Cookie", lucia.createSessionCookie(session.id).serialize(), {
+      append: true,
+    });
+  }
+  if (!session) {
+    c.header("Set-Cookie", lucia.createBlankSessionCookie().serialize(), {
+      append: true,
+    });
+  }
+  c.set("session", session);
+  c.set("user", user);
+  return next();
+});
+
+app.onError((err, c) => {
+  if (err instanceof HTTPException) {
+    const errResponse =
+      err.res ??
+      c.json<ErrorResponse>(
+        {
+          success: false,
+          error: err.message,
+          isFormError:
+            err.cause && typeof err.cause === "object" && "form" in err.cause
+              ? err.cause.form === true
+              : false,
+        },
+        err.status,
+      );
+    return errResponse;
+  }
+  return c.json<ErrorResponse>(
+    {
+      success: false,
+      error:
+        process.env.NODE_ENV === "production"
+          ? "Interal Server Error"
+          : (err.stack ?? err.message),
+    },
+    500,
+  );
+});
+
+export default app;
