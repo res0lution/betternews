@@ -4,9 +4,11 @@ import { HTTPException } from "hono/http-exception";
 
 import { type ErrorResponse } from "@/shared/types";
 
+import type { Context } from "./context";
 import { lucia } from "./lucia";
+import { authRouter } from "./routes/auth";
 
-const app = new Hono();
+const app = new Hono<Context>();
 
 app.get("/", (c) => {
   return c.text("Hello Hono!");
@@ -35,6 +37,9 @@ app.use("*", cors(), async (c, next) => {
   c.set("user", user);
   return next();
 });
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const routes = app.basePath("/api").route("/auth", authRouter);
 
 app.onError((err, c) => {
   if (err instanceof HTTPException) {
@@ -66,3 +71,4 @@ app.onError((err, c) => {
 });
 
 export default app;
+export type ApiRoutes = typeof routes;
